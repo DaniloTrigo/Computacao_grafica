@@ -114,7 +114,6 @@ FormigaRobo.vcxproj
 FormigaRobo.vcxproj.filters
 vcpkg.json
 README.md
-THIRD_PARTY_NOTICES.md
 ```
 
 A distribuição final também pode conter:
@@ -146,6 +145,3 @@ A cena utiliza uma luz principal e uma segunda luz associada ao scanner. O scann
 
 O pacote `FormigaRobo_Entrega.zip` deve conter o executável Release x64, `freeglut.dll`, as duas texturas BMP, código-fonte, arquivos do projeto e o manual em PDF.
 
-## Créditos de terceiros
-
-O projeto utiliza **FreeGLUT** e a classe **RgbImage**. Consulte `THIRD_PARTY_NOTICES.md` para os avisos e informações de terceiros.
