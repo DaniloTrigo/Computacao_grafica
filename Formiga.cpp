@@ -29,7 +29,6 @@ GLuint textureMetal;
 GLuint textureShell;
 GLuint currentTexture;
 
-bool secondTextureLoaded = false;
 
 bool textureOn = true;
 bool lightingOn = true;
@@ -117,6 +116,24 @@ int selectedLeg = FRONT_LEFT;
 bool walking = false;
 float walkPhase = 0.0f;
 
+
+// Camera scanner
+
+float scannerAngle = 0.0f;
+float scannerDirection = 1.0f;
+float scannerPulsePhase = 0.0f;
+float scannerPulse = 0.20f;
+
+struct Vec3 {
+    float x;
+    float y;
+    float z;
+};
+
+Vec3 scannerWorldPos = { 0.0f, 0.0f, 0.0f };
+Vec3 scannerWorldDir = { 1.0f, 0.0f, -0.2f };
+Vec3 scannerGroundHit = { 0.0f, 0.0f, GROUND_Z };
+bool scannerGroundHitValid = false;
 
 
 bool fileExists(const char* filename) {
@@ -392,8 +409,6 @@ void initRendering(void) {
                 filenameTexShell
             );
 
-        secondTextureLoaded =
-            true;
     }
     else {
         textureShell =
@@ -639,6 +654,101 @@ void setGroundMaterial(void) {
 }
 
 
+void setScannerHousingMaterial(void) {
+    applyMaterial(
+        0.88f,
+        0.89f,
+        0.91f,
+
+        0.95f,
+        0.95f,
+        0.98f,
+
+        88.0f,
+
+        0.0f,
+        0.0f,
+        0.0f
+    );
+
+    useMetalTexture(
+        2.3f,
+        2.3f
+    );
+}
+
+
+void setScannerFaceMaterial(void) {
+    applyMaterial(
+        0.05f,
+        0.06f,
+        0.07f,
+
+        0.95f,
+        0.95f,
+        0.98f,
+
+        118.0f,
+
+        0.0f,
+        0.0f,
+        0.0f
+    );
+
+    useMetalTexture(
+        4.0f,
+        4.0f
+    );
+}
+
+
+void setScannerLensMaterial(void) {
+    float pulseGlow =
+        0.20f + 0.55f * scannerPulse;
+
+    applyMaterial(
+        0.55f,
+        0.02f,
+        0.02f,
+
+        1.0f,
+        0.35f,
+        0.35f,
+
+        120.0f,
+
+        pulseGlow,
+        0.01f,
+        0.01f
+    );
+
+    useMetalTexture(
+        2.0f,
+        2.0f
+    );
+}
+
+
+void drawScaledCube(
+    float sizeX,
+    float sizeY,
+    float sizeZ
+) {
+    glPushMatrix();
+
+    glScalef(
+        sizeX,
+        sizeY,
+        sizeZ
+    );
+
+    glutSolidCube(
+        1.0f
+    );
+
+    glPopMatrix();
+}
+
 
 void resetLegs(void) {
     for (
@@ -752,6 +862,679 @@ void setWalkingPose(
 
 
 
+Vec3 makeVec3(
+    float x,
+    float y,
+    float z
+) {
+    Vec3 v = { x, y, z };
+    return v;
+}
+
+
+Vec3 addVec3(
+    Vec3 a,
+    Vec3 b
+) {
+    return makeVec3(
+        a.x + b.x,
+        a.y + b.y,
+        a.z + b.z
+    );
+}
+
+
+Vec3 scaleVec3(
+    Vec3 v,
+    float s
+) {
+    return makeVec3(
+        v.x * s,
+        v.y * s,
+        v.z * s
+    );
+}
+
+
+float lengthVec3(Vec3 v) {
+    return static_cast<float>(
+        sqrt(
+            v.x * v.x +
+            v.y * v.y +
+            v.z * v.z
+        )
+        );
+}
+
+
+Vec3 normalizeVec3(Vec3 v) {
+    float len =
+        lengthVec3(v);
+
+    if (len < 0.0001f) {
+        return makeVec3(
+            1.0f,
+            0.0f,
+            0.0f
+        );
+    }
+
+    return scaleVec3(
+        v,
+        1.0f / len
+    );
+}
+
+
+Vec3 crossVec3(
+    Vec3 a,
+    Vec3 b
+) {
+    return makeVec3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+
+
+Vec3 rotateX(Vec3 v, float angleDeg) {
+    float angle =
+        angleDeg *
+        static_cast<float>(PI) /
+        180.0f;
+
+    float c =
+        static_cast<float>(cos(angle));
+
+    float s =
+        static_cast<float>(sin(angle));
+
+    return makeVec3(
+        v.x,
+        v.y * c - v.z * s,
+        v.y * s + v.z * c
+    );
+}
+
+
+Vec3 rotateY(Vec3 v, float angleDeg) {
+    float angle =
+        angleDeg *
+        static_cast<float>(PI) /
+        180.0f;
+
+    float c =
+        static_cast<float>(cos(angle));
+
+    float s =
+        static_cast<float>(sin(angle));
+
+    return makeVec3(
+        v.x * c + v.z * s,
+        v.y,
+        -v.x * s + v.z * c
+    );
+}
+
+
+Vec3 rotateZ(Vec3 v, float angleDeg) {
+    float angle =
+        angleDeg *
+        static_cast<float>(PI) /
+        180.0f;
+
+    float c =
+        static_cast<float>(cos(angle));
+
+    float s =
+        static_cast<float>(sin(angle));
+
+    return makeVec3(
+        v.x * c - v.y * s,
+        v.x * s + v.y * c,
+        v.z
+    );
+}
+
+
+void computeScannerWorldState(void) {
+    Vec3 localPos =
+        makeVec3(
+            0.42f,
+            0.0f,
+            0.0f
+        );
+
+    Vec3 localDir =
+        makeVec3(
+            1.0f,
+            0.0f,
+            0.0f
+        );
+
+    localPos =
+        rotateY(
+            localPos,
+            -30.0f
+        );
+
+    localDir =
+        rotateY(
+            localDir,
+            -30.0f
+        );
+
+    localPos =
+        rotateZ(
+            localPos,
+            scannerAngle
+        );
+
+    localDir =
+        rotateZ(
+            localDir,
+            scannerAngle
+        );
+
+    localPos =
+        addVec3(
+            localPos,
+            makeVec3(
+                0.50f,
+                0.0f,
+                0.69f
+            )
+        );
+
+    localPos =
+        addVec3(
+            localPos,
+            makeVec3(
+                0.78f,
+                0.0f,
+                0.0f
+            )
+        );
+
+    localPos =
+        rotateZ(
+            localPos,
+            headAngle + walkHeadSway
+        );
+
+    localDir =
+        rotateZ(
+            localDir,
+            headAngle + walkHeadSway
+        );
+
+    localPos =
+        addVec3(
+            localPos,
+            makeVec3(
+                1.42f,
+                0.0f,
+                0.12f
+            )
+        );
+
+    localPos =
+        rotateZ(
+            localPos,
+            bodyYaw
+        );
+
+    localDir =
+        rotateZ(
+            localDir,
+            bodyYaw
+        );
+
+    localPos =
+        rotateX(
+            localPos,
+            bodyRoll
+        );
+
+    localDir =
+        rotateX(
+            localDir,
+            bodyRoll
+        );
+
+    localPos.z +=
+        bodyBob;
+
+    localPos =
+        rotateZ(
+            localPos,
+            robotYaw
+        );
+
+    localDir =
+        rotateZ(
+            localDir,
+            robotYaw
+        );
+
+    scannerWorldPos =
+        localPos;
+
+    scannerWorldDir =
+        normalizeVec3(localDir);
+
+    scannerGroundHitValid =
+        false;
+
+    if (
+        scannerWorldDir.z <
+        -0.01f
+        ) {
+        float t =
+            (GROUND_Z - scannerWorldPos.z) /
+            scannerWorldDir.z;
+
+        if (t > 0.0f) {
+            scannerGroundHit =
+                addVec3(
+                    scannerWorldPos,
+                    scaleVec3(
+                        scannerWorldDir,
+                        t
+                    )
+                );
+
+            scannerGroundHitValid =
+                true;
+        }
+    }
+}
+
+
+void updateScannerLight(void) {
+    if (!lightingOn) {
+        glDisable(
+            GL_LIGHT1
+        );
+        return;
+    }
+
+    glEnable(
+        GL_LIGHT1
+    );
+
+    float pulsePower =
+        0.35f + 0.95f * scannerPulse;
+
+    GLfloat scannerAmbient[] = {
+        0.04f * scannerPulse,
+        0.0f,
+        0.0f,
+        1.0f
+    };
+
+    GLfloat scannerDiffuse[] = {
+        1.05f * pulsePower,
+        0.06f * pulsePower,
+        0.06f * pulsePower,
+        1.0f
+    };
+
+    GLfloat scannerSpecular[] = {
+        1.15f * pulsePower,
+        0.18f * pulsePower,
+        0.18f * pulsePower,
+        1.0f
+    };
+
+    GLfloat scannerPosition[] = {
+        scannerWorldPos.x,
+        scannerWorldPos.y,
+        scannerWorldPos.z,
+        1.0f
+    };
+
+    GLfloat scannerDirectionVec[] = {
+        scannerWorldDir.x,
+        scannerWorldDir.y,
+        scannerWorldDir.z
+    };
+
+    glLightfv(
+        GL_LIGHT1,
+        GL_AMBIENT,
+        scannerAmbient
+    );
+
+    glLightfv(
+        GL_LIGHT1,
+        GL_DIFFUSE,
+        scannerDiffuse
+    );
+
+    glLightfv(
+        GL_LIGHT1,
+        GL_SPECULAR,
+        scannerSpecular
+    );
+
+    glLightfv(
+        GL_LIGHT1,
+        GL_POSITION,
+        scannerPosition
+    );
+
+    glLightfv(
+        GL_LIGHT1,
+        GL_SPOT_DIRECTION,
+        scannerDirectionVec
+    );
+
+    glLightf(
+        GL_LIGHT1,
+        GL_SPOT_CUTOFF,
+        17.0f
+    );
+
+    glLightf(
+        GL_LIGHT1,
+        GL_SPOT_EXPONENT,
+        42.0f
+    );
+
+    glLightf(
+        GL_LIGHT1,
+        GL_CONSTANT_ATTENUATION,
+        0.6f
+    );
+
+    glLightf(
+        GL_LIGHT1,
+        GL_LINEAR_ATTENUATION,
+        0.08f
+    );
+
+    glLightf(
+        GL_LIGHT1,
+        GL_QUADRATIC_ATTENUATION,
+        0.02f
+    );
+}
+
+
+void drawScannerBeamAndMarker(void) {
+    if (!scannerGroundHitValid) {
+        return;
+    }
+
+    bool restoreLighting =
+        lightingOn;
+
+    glDisable(
+        GL_TEXTURE_2D
+    );
+
+    if (restoreLighting) {
+        glDisable(
+            GL_LIGHTING
+        );
+    }
+
+    glEnable(
+        GL_BLEND
+    );
+
+    glBlendFunc(
+        GL_SRC_ALPHA,
+        GL_ONE_MINUS_SRC_ALPHA
+    );
+
+    glDepthMask(
+        GL_FALSE
+    );
+
+    Vec3 up =
+        makeVec3(
+            0.0f,
+            0.0f,
+            1.0f
+        );
+
+    Vec3 side =
+        normalizeVec3(
+            crossVec3(
+                scannerWorldDir,
+                up
+            )
+        );
+
+    if (lengthVec3(side) < 0.001f) {
+        side =
+            makeVec3(
+                0.0f,
+                1.0f,
+                0.0f
+            );
+    }
+
+    float beamHalfWidthNear =
+        0.015f;
+
+    float beamHalfWidthFar =
+        0.11f + 0.08f * scannerPulse;
+
+    Vec3 nearLeft =
+        addVec3(
+            scannerWorldPos,
+            scaleVec3(
+                side,
+                -beamHalfWidthNear
+            )
+        );
+
+    Vec3 nearRight =
+        addVec3(
+            scannerWorldPos,
+            scaleVec3(
+                side,
+                beamHalfWidthNear
+            )
+        );
+
+    Vec3 farLeft =
+        addVec3(
+            scannerGroundHit,
+            scaleVec3(
+                side,
+                -beamHalfWidthFar
+            )
+        );
+
+    Vec3 farRight =
+        addVec3(
+            scannerGroundHit,
+            scaleVec3(
+                side,
+                beamHalfWidthFar
+            )
+        );
+
+    glBegin(
+        GL_QUADS
+    );
+
+    glColor4f(
+        1.0f,
+        0.05f,
+        0.05f,
+        0.34f * scannerPulse
+    );
+    glVertex3f(nearLeft.x, nearLeft.y, nearLeft.z);
+    glVertex3f(nearRight.x, nearRight.y, nearRight.z);
+
+    glColor4f(
+        1.0f,
+        0.08f,
+        0.08f,
+        0.02f
+    );
+    glVertex3f(farRight.x, farRight.y, farRight.z + 0.02f);
+    glVertex3f(farLeft.x, farLeft.y, farLeft.z + 0.02f);
+
+    glEnd();
+
+    glLineWidth(
+        2.8f
+    );
+
+    glBegin(
+        GL_LINES
+    );
+    glColor4f(
+        1.0f,
+        0.15f,
+        0.15f,
+        0.95f * scannerPulse
+    );
+    glVertex3f(
+        scannerWorldPos.x,
+        scannerWorldPos.y,
+        scannerWorldPos.z
+    );
+    glColor4f(
+        1.0f,
+        0.10f,
+        0.10f,
+        0.18f
+    );
+    glVertex3f(
+        scannerGroundHit.x,
+        scannerGroundHit.y,
+        scannerGroundHit.z + 0.015f
+    );
+    glEnd();
+
+    float markerRX =
+        0.26f + 0.05f * scannerPulse;
+
+    float markerRY =
+        0.16f + 0.05f * scannerPulse;
+
+    glBegin(
+        GL_TRIANGLE_FAN
+    );
+    glColor4f(
+        0.95f,
+        0.05f,
+        0.05f,
+        0.20f * scannerPulse
+    );
+    glVertex3f(
+        scannerGroundHit.x,
+        scannerGroundHit.y,
+        GROUND_Z + 0.016f
+    );
+
+    for (int i = 0; i <= 40; i++) {
+        float a =
+            static_cast<float>(
+                2.0 * PI * i / 40.0
+                );
+
+        float cx =
+            scannerGroundHit.x +
+            markerRX * static_cast<float>(cos(a));
+
+        float cy =
+            scannerGroundHit.y +
+            markerRY * static_cast<float>(sin(a));
+
+        glColor4f(
+            1.0f,
+            0.08f,
+            0.08f,
+            0.01f
+        );
+
+        glVertex3f(
+            cx,
+            cy,
+            GROUND_Z + 0.016f
+        );
+    }
+    glEnd();
+
+    glLineWidth(
+        2.0f
+    );
+
+    glColor4f(
+        1.0f,
+        0.16f,
+        0.16f,
+        0.95f * scannerPulse
+    );
+
+    glBegin(
+        GL_LINE_LOOP
+    );
+    for (int i = 0; i < 40; i++) {
+        float a =
+            static_cast<float>(
+                2.0 * PI * i / 40.0
+                );
+
+        float cx =
+            scannerGroundHit.x +
+            markerRX * static_cast<float>(cos(a));
+
+        float cy =
+            scannerGroundHit.y +
+            markerRY * static_cast<float>(sin(a));
+
+        glVertex3f(
+            cx,
+            cy,
+            GROUND_Z + 0.018f
+        );
+    }
+    glEnd();
+
+    float scanOffset =
+        markerRY * static_cast<float>(sin(scannerPulsePhase * 1.7f));
+
+    glBegin(
+        GL_LINES
+    );
+    glVertex3f(
+        scannerGroundHit.x - markerRX * 0.92f,
+        scannerGroundHit.y + scanOffset,
+        GROUND_Z + 0.02f
+    );
+    glVertex3f(
+        scannerGroundHit.x + markerRX * 0.92f,
+        scannerGroundHit.y + scanOffset,
+        GROUND_Z + 0.02f
+    );
+    glEnd();
+
+    glDepthMask(
+        GL_TRUE
+    );
+
+    glDisable(
+        GL_BLEND
+    );
+
+    if (restoreLighting) {
+        glEnable(
+            GL_LIGHTING
+        );
+    }
+}
+
+
 void update(int value) {
     if (walking) {
         walkPhase +=
@@ -762,7 +1545,9 @@ void update(int value) {
             2.0f * PI
             ) {
             walkPhase -=
-                2.0f * PI;
+                static_cast<float>(
+                    2.0 * PI
+                    );
         }
 
         float phaseA =
@@ -841,9 +1626,63 @@ void update(int value) {
                     walkPhase
                 )
                 );
-
-        glutPostRedisplay();
     }
+    else {
+        bodyBob =
+            0.0f;
+
+        bodyRoll =
+            0.0f;
+
+        bodyYaw =
+            0.0f;
+
+        walkHeadSway =
+            0.0f;
+    }
+
+    scannerAngle +=
+        scannerDirection * 1.2f;
+
+    if (scannerAngle >= 32.0f) {
+        scannerAngle =
+            32.0f;
+
+        scannerDirection =
+            -1.0f;
+    }
+    else if (scannerAngle <= -32.0f) {
+        scannerAngle =
+            -32.0f;
+
+        scannerDirection =
+            1.0f;
+    }
+
+    scannerPulsePhase +=
+        0.26f;
+
+    float pulseWave =
+        static_cast<float>(
+            sin(scannerPulsePhase)
+            );
+
+    float pulsePeak =
+        pulseWave > 0.0f ? pulseWave : 0.0f;
+
+    scannerPulse =
+        0.16f +
+        0.84f *
+        static_cast<float>(
+            pow(
+                pulsePeak,
+                6.0
+            )
+            );
+
+    computeScannerWorldState();
+
+    glutPostRedisplay();
 
     glutTimerFunc(
         25,
@@ -1010,8 +1849,16 @@ void handleKeypress(
             glEnable(
                 GL_LIGHT0
             );
+
+            glEnable(
+                GL_LIGHT1
+            );
         }
         else {
+            glDisable(
+                GL_LIGHT1
+            );
+
             glDisable(
                 GL_LIGHTING
             );
@@ -1555,6 +2402,81 @@ void drawLinearActuator(
 }
 
 
+void drawShockAbsorber(
+    float length,
+    float offset
+) {
+    glPushMatrix();
+
+    glTranslatef(
+        offset,
+        0.0f,
+        length * 0.18f
+    );
+
+    setDarkMetalMaterial();
+
+    drawCylinder(
+        0.046f,
+        length * 0.34f
+    );
+
+    glTranslatef(
+        0.0f,
+        0.0f,
+        length * 0.27f
+    );
+
+    setJointMaterial();
+
+    drawCylinder(
+        0.029f,
+        length * 0.28f
+    );
+
+    glTranslatef(
+        0.0f,
+        0.0f,
+        length * 0.24f
+    );
+
+    setRedAccentMaterial();
+
+    drawSphere(
+        0.042f
+    );
+
+    glPopMatrix();
+}
+
+
+void drawAntennaSensor(void) {
+    setJointMaterial();
+
+    drawSphere(
+        0.064f
+    );
+
+    glPushMatrix();
+
+    glTranslatef(
+        0.0f,
+        0.0f,
+        0.045f
+    );
+
+    setSensorMaterial();
+
+    drawEllipsoid(
+        1.0f,
+        0.050f,
+        0.050f,
+        0.075f
+    );
+
+    glPopMatrix();
+}
+
 
 void drawGround(void) {
     glDisable(
@@ -1717,6 +2639,72 @@ void drawCoolingVents(void) {
 
 
 
+void drawEnergyModule(void) {
+    glPushMatrix();
+
+    // Modulo dorsal central, recuado e separado da tampa de manutencao
+    glTranslatef(
+        -0.30f,
+        0.0f,
+        0.93f
+    );
+
+    setDarkMetalMaterial();
+
+    drawEllipsoid(
+        1.0f,
+        0.30f,
+        0.16f,
+        0.050f
+    );
+
+    // Nucleo energetico vermelho
+    glPushMatrix();
+
+    glTranslatef(
+        0.02f,
+        0.0f,
+        0.050f
+    );
+
+    setRedAccentMaterial();
+
+    drawEllipsoid(
+        1.0f,
+        0.16f,
+        0.075f,
+        0.030f
+    );
+
+    glPopMatrix();
+
+    // Indicadores de estado
+    for (
+        int i = 0;
+        i < 3;
+        i++
+        ) {
+        glPushMatrix();
+
+        glTranslatef(
+            -0.12f + 0.12f * i,
+            0.0f,
+            0.065f
+        );
+
+        setSensorMaterial();
+
+        drawSphere(
+            0.020f
+        );
+
+        glPopMatrix();
+    }
+
+    glPopMatrix();
+}
+
+
 void drawThorax(void) {
     // Pronoto
 
@@ -1762,29 +2750,31 @@ void drawThorax(void) {
     glPopMatrix();
 
 
-    // Tampa de manutencao
+    // Tampa de manutencao mais baixa e integrada ao dorso
 
     glPushMatrix();
 
     glTranslatef(
-        -0.10f,
+        -0.05f,
         0.0f,
-        0.72f
+        0.66f
     );
 
     setDarkMetalMaterial();
 
     drawEllipsoid(
         1.0f,
-        0.78f,
-        0.56f,
-        0.075f
+        0.70f,
+        0.48f,
+        0.055f
     );
 
     glPopMatrix();
 
 
     drawCoolingVents();
+
+    drawEnergyModule();
 }
 
 
@@ -2055,9 +3045,163 @@ void drawAntenna(
     }
 
 
+    drawAntennaSensor();
+
+
     glPopMatrix();
 }
 
+
+
+void drawScannerCamera(void) {
+    glPushMatrix();
+
+    glTranslatef(
+        0.44f,
+        0.0f,
+        0.58f
+    );
+
+    drawServoJoint(
+        0.11f
+    );
+
+    glPushMatrix();
+    glTranslatef(
+        -0.04f,
+        0.0f,
+        0.10f
+    );
+    glRotatef(
+        90.0f,
+        0.0f,
+        1.0f,
+        0.0f
+    );
+    setJointMaterial();
+    drawCylinder(
+        0.045f,
+        0.16f
+    );
+    glPopMatrix();
+
+    glTranslatef(
+        0.06f,
+        0.0f,
+        0.11f
+    );
+
+    glRotatef(
+        scannerAngle,
+        0.0f,
+        0.0f,
+        1.0f
+    );
+
+    drawServoJoint(
+        0.09f
+    );
+
+    glRotatef(
+        -30.0f,
+        0.0f,
+        1.0f,
+        0.0f
+    );
+
+    glPushMatrix();
+    glTranslatef(
+        0.14f,
+        0.0f,
+        0.0f
+    );
+    setScannerHousingMaterial();
+    drawScaledCube(
+        0.44f,
+        0.26f,
+        0.24f
+    );
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(
+        0.00f,
+        0.0f,
+        0.0f
+    );
+    setScannerHousingMaterial();
+    drawScaledCube(
+        0.10f,
+        0.14f,
+        0.14f
+    );
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(
+        0.34f,
+        0.0f,
+        0.0f
+    );
+    setScannerFaceMaterial();
+    drawScaledCube(
+        0.08f,
+        0.28f,
+        0.28f
+    );
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(
+        0.38f,
+        0.0f,
+        0.0f
+    );
+    setScannerFaceMaterial();
+    drawEllipsoid(
+        1.0f,
+        0.045f,
+        0.125f,
+        0.125f
+    );
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(
+        0.42f,
+        0.0f,
+        0.0f
+    );
+    setScannerLensMaterial();
+    drawEllipsoid(
+        1.0f,
+        0.030f,
+        0.085f,
+        0.085f
+    );
+    glPopMatrix();
+
+    for (int i = 0; i < 10; i++) {
+        float a =
+            static_cast<float>(
+                2.0 * PI * i / 10.0
+                );
+
+        glPushMatrix();
+        glTranslatef(
+            0.385f,
+            0.0f + 0.095f * static_cast<float>(cos(a)),
+            0.0f + 0.095f * static_cast<float>(sin(a))
+        );
+        setJointMaterial();
+        drawSphere(
+            0.014f
+        );
+        glPopMatrix();
+    }
+
+    glPopMatrix();
+}
 
 
 void drawHead(void) {
@@ -2157,6 +3301,9 @@ void drawHead(void) {
         antennaRightBaseAngle,
         antennaRightTipAngle
     );
+
+
+    drawScannerCamera();
 
 
     glPopMatrix();
@@ -2480,6 +3627,12 @@ void drawLeg(
     );
 
 
+    drawShockAbsorber(
+        femurLength,
+        -0.105f
+    );
+
+
     glTranslatef(
         0.0f,
         0.0f,
@@ -2516,6 +3669,12 @@ void drawLeg(
     drawLinearActuator(
         tibiaLength,
         0.082f
+    );
+
+
+    drawShockAbsorber(
+        tibiaLength,
+        -0.082f
     );
 
 
@@ -2800,6 +3959,9 @@ void drawScene(void) {
     }
 
 
+    computeScannerWorldState();
+
+
     // Luz fixa no mundo
 
     if (lightingOn) {
@@ -2817,10 +3979,14 @@ void drawScene(void) {
         );
     }
 
+    updateScannerLight();
+
 
     drawGround();
 
     drawAnt();
+
+    drawScannerBeamAndMarker();
 
 
     glutSwapBuffers();

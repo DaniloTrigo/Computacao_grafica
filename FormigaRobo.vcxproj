@@ -23,9 +23,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Formiga.cpp" />
-    <ClCompile Include="RbgImage.cpp" />
+    <ClCompile Include="RgbImage.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="antShellTexture.bmp" />
     <Image Include="metalTexture1.bmp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
